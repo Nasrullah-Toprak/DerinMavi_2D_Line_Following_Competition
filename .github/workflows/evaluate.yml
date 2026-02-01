@@ -53,7 +53,7 @@ jobs:
         echo "${{ github.event.pull_request.html_url }}" > artifacts/pr_url.txt
 
     - name: Upload Score Artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: competition-results
         path: artifacts/
