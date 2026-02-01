@@ -1,0 +1,53 @@
+name: Update Leaderboard
+
+on:
+  workflow_run:
+    workflows: ["Evaluate Submission"]
+    types:
+      - completed
+
+jobs:
+  update-leaderboard:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout main repo
+        uses: actions/checkout@v3
+
+      - name: Download Artifacts
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: ${{ github.event.workflow_run.workflow_id }}
+          name: competition-results
+          path: artifacts
+          
+      - name: Read Artifacts
+        id: read
+        run: |
+          SCORE=$(cat artifacts/score.txt)
+          USER=$(cat artifacts/user.txt)
+          PR_URL=$(cat artifacts/pr_url.txt)
+          echo "score=$SCORE" >> $GITHUB_OUTPUT
+          echo "user=$USER" >> $GITHUB_OUTPUT
+          echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
+
+      - name: Update Leaderboard File
+        run: |
+          python update_leaderboard.py "${{ steps.read.outputs.score }}" "${{ steps.read.outputs.user }}"
+
+      - name: Commit Leaderboard
+        run: |
+          git config --global user.name 'Leaderboard Bot'
+          git config --global user.email 'bot@noreply.github.com'
+          git add README.md
+          if git diff --staged --quiet; then
+            echo "No changes to leaderboard"
+          else
+            git commit -m "Update Leaderboard: ${{ steps.read.outputs.user }} - ${{ steps.read.outputs.score }}s"
+            git push
+          fi
