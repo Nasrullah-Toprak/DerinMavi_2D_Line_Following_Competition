@@ -36,12 +36,23 @@ jobs:
         # Run the headless test runner
         # Capture output. If successful, it prints the time.
         export PYGAME_HIDE_SUPPORT_PROMPT=1
-        SCORE=$(python main.py --test)
+        # Run the simulation and capture all output
+        OUTPUT=$(python main.py --test)
         EXIT_CODE=$?
+        
+        # Print output for debugging
+        echo "$OUTPUT"
         
         if [ $EXIT_CODE -ne 0 ]; then
           echo "Simulation Failed!"
-          echo "$SCORE"
+          exit 1
+        fi
+        
+        # Extract the score using grep (looks for "FINAL_SCORE: 12.3456")
+        SCORE=$(echo "$OUTPUT" | grep "FINAL_SCORE:" | cut -d ' ' -f 2)
+        
+        if [ -z "$SCORE" ]; then
+          echo "Error: Could not find FINAL_SCORE in output"
           exit 1
         fi
         

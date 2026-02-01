@@ -139,7 +139,7 @@ def run_test_mode():
                 if g > 200 and r < 50 and b < 50:
                     finished = True
                     time_taken = frames * DT
-                    print(f"{time_taken:.4f}")
+                    print(f"FINAL_SCORE: {time_taken:.4f}")
                     sys.exit(0)
             else:
                 print("FAIL: Out of bounds")
