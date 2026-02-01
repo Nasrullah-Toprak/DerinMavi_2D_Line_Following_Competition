@@ -31,7 +31,7 @@ CAMERA_OFFSET = 30
 CAMERA_FOV_SIZE = (64, 64)
 
 # Car Start Position
-start_x, start_y = 120, 300
+start_x, start_y = 60, 550
 start_angle = -math.pi / 2
 
 
@@ -212,7 +212,7 @@ def run_dev_mode(debug=False):
             current_steering = steering
 
             # 3. Update Physics
-            car.update(steering, target_speed)
+            # car.update(steering, target_speed)
 
             # 4. Check Environment
             cx, cy = int(car.x), int(car.y)
