@@ -22,9 +22,19 @@ DT = 1.0 / 60.0    # Fixed time step
 
 # Physics Constants
 MAX_SPEED = 10.0
-FRICTION = 0.5
-ACCEL_RATE = 0.5
-TURN_RATE = 0.1
+FRICTION = 0.98           # Rolling friction (velocity multiplier per frame)
+ACCEL_RATE = 0.3          # Acceleration rate (reduced for realism)
+BRAKE_RATE = 0.4          # Braking rate (how fast the car slows down)
+TURN_RATE = 0.08          # Base turn rate (reduced for realism)
+
+# Advanced Physics - Realism
+LATERAL_FRICTION = 0.85   # How much lateral velocity is preserved (drift factor)
+MASS = 1.0                # Car mass (affects momentum)
+DRAG_COEFFICIENT = 0.02   # Air resistance
+MIN_TURN_SPEED = 0.5      # Minimum speed needed to turn
+TURN_SPEED_FACTOR = 0.15  # How much speed affects turning (higher = harder to turn at speed)
+SLIP_ANGLE_THRESHOLD = 0.3  # When wheels start to slip
+GRIP_LOSS_RATE = 0.7      # How much grip is lost when slipping
 
 # Camera Sensor
 CAMERA_OFFSET = 30
@@ -40,21 +50,97 @@ class Car:
         self.x = x
         self.y = y
         self.angle = angle
+        
+        # Velocity components (forward and lateral)
+        self.velocity_forward = 0.0   # Speed along car's heading
+        self.velocity_lateral = 0.0   # Speed perpendicular to heading (drift)
+        
+        # For compatibility
         self.speed = 0.0
+        
+        # Angular velocity
+        self.angular_velocity = 0.0
+        
+        # Grip state
+        self.is_slipping = False
+        
         self.original_image = image
         if image:
             self.width = image.get_width()
             self.height = image.get_height()
 
     def update(self, steering, target_speed):
-        if self.speed < target_speed:
-            self.speed += ACCEL_RATE
-        elif self.speed > target_speed:
-            self.speed -= ACCEL_RATE
-
-        self.x += self.speed * math.cos(self.angle)
-        self.y += self.speed * math.sin(self.angle)
-        self.angle += steering * self.speed * TURN_RATE
+        # Clamp target speed
+        target_speed = max(-MAX_SPEED * 0.3, min(MAX_SPEED, target_speed))
+        
+        # Calculate acceleration/braking
+        speed_diff = target_speed - self.velocity_forward
+        if speed_diff > 0:
+            # Accelerating
+            accel = min(ACCEL_RATE, speed_diff)
+            self.velocity_forward += accel
+        else:
+            # Braking or coasting
+            if target_speed < self.velocity_forward * 0.5:
+                # Active braking
+                decel = min(BRAKE_RATE, abs(speed_diff))
+            else:
+                # Coasting (engine braking)
+                decel = min(ACCEL_RATE * 0.5, abs(speed_diff))
+            self.velocity_forward -= decel
+        
+        # Apply rolling friction and air drag
+        self.velocity_forward *= FRICTION
+        self.velocity_forward -= self.velocity_forward * abs(self.velocity_forward) * DRAG_COEFFICIENT
+        
+        # Speed for compatibility
+        self.speed = self.velocity_forward
+        
+        # Calculate effective turn rate based on speed
+        # Turning is harder at high speeds, impossible when stopped
+        if abs(self.velocity_forward) < MIN_TURN_SPEED:
+            effective_turn_rate = TURN_RATE * (abs(self.velocity_forward) / MIN_TURN_SPEED)
+        else:
+            # At higher speeds, turning becomes harder
+            speed_penalty = 1.0 / (1.0 + abs(self.velocity_forward) * TURN_SPEED_FACTOR)
+            effective_turn_rate = TURN_RATE * speed_penalty
+        
+        # Calculate slip angle (difference between heading and velocity direction)
+        requested_angular_change = steering * effective_turn_rate * abs(self.velocity_forward)
+        
+        # Check for wheel slip
+        if abs(requested_angular_change) > SLIP_ANGLE_THRESHOLD:
+            self.is_slipping = True
+            # Reduce grip when slipping
+            requested_angular_change *= GRIP_LOSS_RATE
+            # Add lateral velocity (drift)
+            drift_force = steering * abs(self.velocity_forward) * 0.1
+            self.velocity_lateral += drift_force
+        else:
+            self.is_slipping = False
+        
+        # Apply angular velocity with smoothing
+        target_angular_vel = requested_angular_change
+        self.angular_velocity += (target_angular_vel - self.angular_velocity) * 0.3
+        self.angle += self.angular_velocity
+        
+        # Apply lateral friction (reduces drift over time)
+        self.velocity_lateral *= LATERAL_FRICTION
+        
+        # Calculate world velocity from forward and lateral components
+        forward_x = self.velocity_forward * math.cos(self.angle)
+        forward_y = self.velocity_forward * math.sin(self.angle)
+        
+        lateral_x = self.velocity_lateral * math.cos(self.angle + math.pi/2)
+        lateral_y = self.velocity_lateral * math.sin(self.angle + math.pi/2)
+        
+        # Update position
+        self.x += forward_x + lateral_x
+        self.y += forward_y + lateral_y
+        
+        # Clamp speeds
+        self.velocity_forward = max(-MAX_SPEED * 0.3, min(MAX_SPEED, self.velocity_forward))
+        self.velocity_lateral = max(-MAX_SPEED * 0.5, min(MAX_SPEED * 0.5, self.velocity_lateral))
 
     def draw(self, surface):
         if self.original_image is None:
@@ -63,6 +149,11 @@ class Car:
         rotated_image = pygame.transform.rotate(self.original_image, degrees)
         rect = rotated_image.get_rect(center=(self.x, self.y))
         surface.blit(rotated_image, rect)
+        
+        # Draw slip indicator (optional debug visualization)
+        if self.is_slipping:
+            # Draw red circle when slipping
+            pygame.draw.circle(surface, (255, 0, 0), (int(self.x), int(self.y) - 20), 5)
 
     def get_sensor_view(self, cv_track_img):
         cx = self.x + CAMERA_OFFSET * math.cos(self.angle)
